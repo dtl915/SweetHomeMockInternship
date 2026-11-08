@@ -2067,14 +2067,8 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
       } else {
         // Apply print scale to paper size expressed in 1/72nds of an inch
         printScale = this.home.getPrint().getPlanScale().floatValue() * LengthUnit.centimeterToInch(72);
-        pagesPerRow = (int) (printedItemBounds.getWidth() * printScale / imageableWidth);
-        if (printedItemBounds.getWidth() * printScale != imageableWidth) {
-          pagesPerRow++;
-        }
-        pagesPerColumn = (int) (printedItemBounds.getHeight() * printScale / imageableHeight);
-        if (printedItemBounds.getHeight() * printScale != imageableHeight) {
-          pagesPerColumn++;
-        }
+        pagesPerRow = getPrintedPageCount(printedItemBounds.getWidth(), printScale, imageableWidth);
+        pagesPerColumn = getPrintedPageCount(printedItemBounds.getHeight(), printScale, imageableHeight);
         if (pageIndex >= pagesPerRow * pagesPerColumn) {
           return NO_SUCH_PAGE;
         }
@@ -2109,31 +2103,58 @@ public class PlanComponent extends JComponent implements PlanView, Scrollable, P
     }
   }
 
+  /**
+   * Returns the number of pages needed to print a plan <code>length</code> at
+   * <code>printScale</code> on pages of <code>imageableLength</code>.
+   * Shared by {@link #printSelectedLevel} and {@link #getSelectedLevelPageCount}
+   * so that both always agree on the page grid of a level.
+   */
+  private static int getPrintedPageCount(double length, float printScale, double imageableLength) {
+    int pageCount = (int) (length * printScale / imageableLength);
+    if (length * printScale != imageableLength) {
+      pageCount++;
+    }
+    return pageCount;
+  }
+
+  /**
+   * Returns the number of pages printed by {@link #printSelectedLevel}
+   * for the selected level.
+   */
   private int getSelectedLevelPageCount(Graphics g, PageFormat pageFormat) {
     Rectangle2D printedItemBounds = getItemsBounds(g, getPaintedItems());
     if (printedItemBounds == null) {
-      return 0; // nothing to print on this level
+      return 0; // nothing to print
     } else if (this.home.getPrint() == null || this.home.getPrint().getPlanScale() == null) {
       return 1; // fit-to-page: one page per level
     } else {
       float printScale = this.home.getPrint().getPlanScale().floatValue() * LengthUnit.centimeterToInch(72);
-      int pagesPerRow = (int) Math.ceil(printedItemBounds.getWidth() * printScale / pageFormat.getImageableWidth());
-      int pagesPerColumn = (int) Math
-          .ceil(printedItemBounds.getHeight() * printScale / pageFormat.getImageableHeight());
-      return pagesPerRow * pagesPerColumn;
+      return getPrintedPageCount(printedItemBounds.getWidth(), printScale, pageFormat.getImageableWidth())
+          * getPrintedPageCount(printedItemBounds.getHeight(), printScale, pageFormat.getImageableHeight());
     }
   }
 
+  /**
+   * Prints the plan of every viewable level, in the home's level order, at the
+   * scale given in the home print attributes or at a scale that makes it fill
+   * <code>pageFormat</code> imageable size if this attribute is <code>null</code>.
+   * The selected level is temporarily changed and always restored.
+   */
   public int print(Graphics g, PageFormat pageFormat, int pageIndex) {
+    List<Level> levels = this.home.getLevels();
+    if (levels.isEmpty()) {
+      // Home without levels: keep original behaviour
+      return printSelectedLevel(g, pageFormat, pageIndex);
+    }
     List<Level> printedLevels = new ArrayList<Level>();
-    for (Level level : this.home.getLevels()) { // already in the home's level order
+    for (Level level : levels) { // already in the home's level order
       if (level.isViewable()) {
         printedLevels.add(level);
       }
     }
     if (printedLevels.isEmpty()) {
-      // Home without levels: keep original behaviour
-      return printSelectedLevel(g, pageFormat, pageIndex);
+      // No viewable level: no plan page
+      return NO_SUCH_PAGE;
     }
     Level oldSelectedLevel = this.home.getSelectedLevel();
     try {
